@@ -67,7 +67,7 @@ typedef pcl::PointXYZI PointType;
 typedef pcl::PointCloud<PointType> PointCloudT;
 // For clustering
 typedef pcl::PointXYZINormal PointTypeFull;
-
+std::vector<std::vector<measurement>> matlabsend;
 //---------------------------------------------------------------------------------------------------------------------------------------------------
 
 /* GLOBAL FUNCTION DECLARATIONS */
@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
 	//-----------------------------------------------------------------------------------------------------------------------------------------------
 
 	/* VARIABLE DECLARATIONS */
-	std::vector<std::vector<measurement>> matlabsend;
+	
 	std::vector<measurement> meas_snd(10);
 
 
@@ -494,6 +494,16 @@ int main(int argc, char *argv[])
 		{ 
 			matlabsend.push_back(meas_snd);
 		}
+		for (int i = 0; i<matlabsend.size(); i++)
+		{
+			// start point
+			for (int j = 0; j<matlabsend[i].size(); j++)
+			{
+				
+				cout << matlabsend[i][j].x << endl;
+			}
+		}
+
 		
 		printf("\n\nTime taken: %.2fs\n\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
 	}
