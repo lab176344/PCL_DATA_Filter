@@ -6,7 +6,7 @@
 // Point Cloud I/O related
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include <pcl/io/vlp_grabber.h>
+
 #include <pcl/io/hdl_grabber.h>
 #include <pcl/console/parse.h>
 #include <pcl/visualization/pcl_visualizer.h>
@@ -101,10 +101,12 @@ double angle_to_line(pcl::PointXYZ line_start, pcl::PointXYZ line_end, pcl::Poin
 	return result;
 }
 
-uint32_t calculate_utc(uint32_t time, float azimuth)
+uint32_t calculate_utc(uint32_t time,uint32_t tim_gap, float azimuth)
 {
 	uint32_t time_calcualte=0;
-
+	uint32_t time_degree = 0;
+	time_degree = tim_gap * (azimuth / 360);
+	time_calcualte = time - time_degree;
 
 
 	return time_calcualte;
@@ -150,6 +152,7 @@ int main(int argc, char *argv[])
 	//-----------------------------------------------------------------------------------------------------------------------------------------------
 
 	/* VARIABLE DECLARATIONS */
+	std::vector<std::vector<measurement>> matlabsend;
 	std::vector<measurement> meas_snd(10);
 
 
@@ -258,10 +261,11 @@ int main(int argc, char *argv[])
 
 	while (!viewer->wasStopped())
 	{
-
+		bool send_measurement = false;
 		viewer->spinOnce(); // Update Viewer
 		tStart = clock();
 		boost::mutex::scoped_try_lock lock(mutex);
+		unsigned int lastangle=grabber->last_azimuth_;
 		if (lock.owns_lock() && cloud) 
 		{
 			if (debug)
@@ -271,16 +275,17 @@ int main(int argc, char *argv[])
 			}
 
 			/*Get time stamp data*/
-
+			uint32_t time_gap = 0;
 			time_frame = cloud->header.stamp;
 			n = static_cast<uint32_t>(time_frame);
 			u = time_frame >> 32;
 			cout << (n - last_time) << endl;
+			time_gap = n - last_time;
 			last_time = n;
 			std::string frameid=cloud->header.frame_id;
 			cout << frameid << endl;
 			//---------------------------------------------------------------------------------------------------------------------------------------
-
+		
 
 			/* FILTERING THE Z AXIS AND DOWNSAMPLING */
 
@@ -468,11 +473,16 @@ int main(int argc, char *argv[])
 					cluster << cluster_angle;
 					meas_snd[i].x = cluster_x;
 					meas_snd[i].y = cluster_y;
+					if (cluster_angle < 0)
+					{
+						cluster_angle = 360 - cluster_angle;
+					}
 					meas_snd[i].azimuth = cluster_angle;
-					time_cluster = calculate_utc(n, meas_snd[i].azimuth);
+					time_cluster = calculate_utc(n,time_gap, meas_snd[i].azimuth);
+
 					meas_snd[i].utc = time_cluster;
 					
-
+					send_measurement = true;
 					viewer->addCube(min_point_AABB.x, max_point_AABB.x, min_point_AABB.y, max_point_AABB.y, min_point_AABB.z, max_point_AABB.z, 1.0, 1.0, 0.0, ss1.str());
 					viewer->addText3D(cluster.str(), max_point_AABB, 1.0, 1.0, 1.0, 1.0, ss2.str());
 					viewer->setRepresentationToWireframeForAllActors();
@@ -480,6 +490,11 @@ int main(int argc, char *argv[])
 				}
 			}
 		}
+		if(send_measurement)
+		{ 
+			matlabsend.push_back(meas_snd);
+		}
+		
 		printf("\n\nTime taken: %.2fs\n\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
 	}
 
