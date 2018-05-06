@@ -45,41 +45,17 @@
 /* GLOBAL VARIABLE DECLARATIONS */
 
 // Structure for bounding box
-struct minmax_t
+struct measurement
 {
-	float x, y, z;
+	int ID;
+	float x;
+	float y;
+	float z;
+	float azimuth;
+	uint32_t utc;
 };
 
-// Structure for Object ids
-struct obj_t
-{
-	std::vector<int> ID;
-	std::vector<double> Distances;
-	std::vector<double> width;
-	std::vector<double> length;
-	std::vector<double> height;
-};
 
-// Struct for laser data
-
-struct Laser
-{
-	double azimuth;
-	double vertical;
-	unsigned short distance;
-	unsigned char intensity;
-	unsigned char id;
-	long long time;
-
-	const bool operator < (const struct Laser& laser) {
-		if (azimuth == laser.azimuth) {
-			return id < laser.id;
-		}
-		else {
-			return azimuth < laser.azimuth;
-		}
-	}
-};
 
 // Namespaces for PCL and OpenCV
 
@@ -124,6 +100,18 @@ double angle_to_line(pcl::PointXYZ line_start, pcl::PointXYZ line_end, pcl::Poin
 	}
 	return result;
 }
+
+uint32_t calculate_utc(uint32_t time, float azimuth)
+{
+	uint32_t time_calcualte=0;
+
+
+
+	return time_calcualte;
+
+}
+
+
 //---------------------------------------------------------------------------------------------------------------------------------------------------
 
 /* MAIN FUNCTION */
@@ -146,7 +134,7 @@ int main(int argc, char *argv[])
 	// Default values
 	std::string ipaddress("192.168.1.70");
 	std::string port("2368");
-	std::string pcap("velodyne-32_2.pcap");
+	std::string pcap("velodyne-32_1.pcap");
 	std::string clbr("config.xml");
 
 	pcl::console::parse_argument(argc, argv, "-ipaddress", ipaddress);
@@ -162,7 +150,7 @@ int main(int argc, char *argv[])
 	//-----------------------------------------------------------------------------------------------------------------------------------------------
 
 	/* VARIABLE DECLARATIONS */
-
+	std::vector<measurement> meas_snd(10);
 
 
 	// Clock
@@ -258,7 +246,7 @@ int main(int argc, char *argv[])
 	}
 	// Register Callback Function
 	boost::signals2::connection connection = grabber->registerCallback(function);
-	std::vector<Laser> lasers;
+	
 	// Start Grabber
 	grabber->start();
 
@@ -285,15 +273,12 @@ int main(int argc, char *argv[])
 			/*Get time stamp data*/
 
 			time_frame = cloud->header.stamp;
-			u = time_frame >> 32;
 			n = static_cast<uint32_t>(time_frame);
-			//n = n % (24 * 60 * 60);
-
-
+			u = time_frame >> 32;
 			cout << (n - last_time) << endl;
-			cout << (u - ls_t) << endl;
 			last_time = n;
-			ls_t = u;
+			std::string frameid=cloud->header.frame_id;
+			cout << frameid << endl;
 			//---------------------------------------------------------------------------------------------------------------------------------------
 
 
@@ -458,9 +443,8 @@ int main(int argc, char *argv[])
 					outrem.filter(*cloud_cluster_vector[i]);
 
 					//viewer->removeShape(ss.str());
-					std::stringstream ss1, cluster;
-					ss1 << "line_1" << i;
-					cluster << "cluster" << i;
+					std::stringstream ss1, cluster,ss2;
+				
 
 					/**+++++++++++++++
 					Bounidng box generation
@@ -473,7 +457,24 @@ int main(int argc, char *argv[])
 					pcl::PointXYZI min_point_AABB;
 					pcl::PointXYZI max_point_AABB;
 					feature_extractor.getAABB(min_point_AABB, max_point_AABB);
-					viewer->addCube(min_point_AABB.x, max_point_AABB.x, min_point_AABB.y, max_point_AABB.y, min_point_AABB.z, max_point_AABB.z, 1.0, 1.0, 0.0, "SS");
+					ss1 << "line_1" << i;
+					ss2 << "s2" << i;
+
+					float cluster_x = 0, cluster_y = 0, cluster_angle = 0;
+					uint32_t time_cluster = 0;
+					cluster_x = (max_point_AABB.x + min_point_AABB.x) / 2;
+					cluster_y = (max_point_AABB.y + min_point_AABB.y) / 2;
+					cluster_angle = std::atan2(cluster_y,cluster_x);
+					cluster << cluster_angle;
+					meas_snd[i].x = cluster_x;
+					meas_snd[i].y = cluster_y;
+					meas_snd[i].azimuth = cluster_angle;
+					time_cluster = calculate_utc(n, meas_snd[i].azimuth);
+					meas_snd[i].utc = time_cluster;
+					
+
+					viewer->addCube(min_point_AABB.x, max_point_AABB.x, min_point_AABB.y, max_point_AABB.y, min_point_AABB.z, max_point_AABB.z, 1.0, 1.0, 0.0, ss1.str());
+					viewer->addText3D(cluster.str(), max_point_AABB, 1.0, 1.0, 1.0, 1.0, ss2.str());
 					viewer->setRepresentationToWireframeForAllActors();
 
 				}
