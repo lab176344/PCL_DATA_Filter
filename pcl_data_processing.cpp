@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
 	// Default values
 	std::string ipaddress("192.168.1.112");
 	std::string port("2368");
-	std::string pcap("bs4d1lane.pcap");
+	std::string pcap("80kmlane2.pcap");
 	std::string clbr("config.xml");
 
 	pcl::console::parse_argument(argc, argv, "-ipaddress", ipaddress);
@@ -318,8 +318,6 @@ int main(int argc, char *argv[])
 			pass.setFilterLimitsNegative(false);
 			pass.filter(*cloud_outliers);
 			
-		
-
 			if (debug)
 			{
 				std::cerr << "Stat Outliners Final: " << cloud_outliers->width * cloud_outliers->height
@@ -333,7 +331,6 @@ int main(int argc, char *argv[])
 			
 			if (0)
 			{
-
 				pcl::visualization::PointCloudColorHandlerCustom<PointType> rgb2(cloud_inliers, 255.0, 0.0, 0.0); //This will display the point cloud in green (R,G,B)
 				if ((!viewer->updatePointCloud(cloud_inliers, rgb2, "cloud ins")))
 				{
@@ -357,15 +354,13 @@ int main(int argc, char *argv[])
 			{
 				// Eucledian
 				pcl::EuclideanClusterExtraction<PointType> ec;
-				ec.setClusterTolerance(0.1); // 2cm
-				ec.setMinClusterSize(10);
+				ec.setClusterTolerance(0.8); // 2cm
+				ec.setMinClusterSize(3);
 				ec.setMaxClusterSize(6000);
 				ec.setSearchMethod(search_tree);
 				ec.setInputCloud(cloud_outliers);
 				ec.extract(cluster_indices);
 			}
-
-
 
 			//---------------------------------------------------------------------------------------------------------------------------------------
 
@@ -403,12 +398,9 @@ int main(int argc, char *argv[])
 					/*+++++++++++++++
 					Outliner removal in each cluster
 					+++++++++++++++++*/
-					
-
-					//viewer->removeShape(ss.str());
+				
 					std::stringstream ss1, cluster,ss2;
 				
-
 					/**+++++++++++++++
 					Bounidng box generation
 					++++++++++++++++++*/
@@ -427,8 +419,13 @@ int main(int argc, char *argv[])
 					uint32_t time_cluster = 0;
 					cluster_x = (max_point_AABB.x + min_point_AABB.x) / 2;
 					cluster_y = (max_point_AABB.y + min_point_AABB.y) / 2;
+					float distance;
+					distance = sqrt(pow(cluster_x, 2.0) + pow(cluster_y, 2.0));
+					if (distance < 0.8)
+					{
+						continue;
+					}
 					cluster_angle = std::atan2(cluster_y,cluster_x);
-					cluster << cluster_angle;
 					meas_snd[i].x = cluster_x;
 					meas_snd[i].y = cluster_y;
 					if (cluster_angle < 0)
@@ -442,7 +439,6 @@ int main(int argc, char *argv[])
 					
 					send_measurement = true;
 					viewer->addCube(min_point_AABB.x, max_point_AABB.x, min_point_AABB.y, max_point_AABB.y, min_point_AABB.z, max_point_AABB.z, 1.0, 1.0, 0.0, ss1.str());
-					viewer->addText3D(cluster.str(), max_point_AABB, 1.0, 1.0, 1.0, 1.0, ss2.str());
 					viewer->setRepresentationToWireframeForAllActors();
 
 				}
@@ -450,20 +446,10 @@ int main(int argc, char *argv[])
 		}
 		if(send_measurement)
 		{ 
-			matlabsend.push_back(meas_snd);
-		}
-		for (int i = 0; i<matlabsend.size(); i++)
-		{
-			// start point
-			for (int j = 0; j<matlabsend[i].size(); j++)
-			{
-				
-				cout << matlabsend[i][j].x << endl;
-			}
-		}
 
-		
-		printf("\n\nTime taken: %.2fs\n\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
+			matlabsend.push_back(meas_snd);
+
+		}
 	}
 
 	//-----------------------------------------------------------------------------------------------------------------------------------------------
