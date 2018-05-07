@@ -134,9 +134,9 @@ int main(int argc, char *argv[])
 	}
 
 	// Default values
-	std::string ipaddress("192.168.1.70");
+	std::string ipaddress("192.168.1.112");
 	std::string port("2368");
-	std::string pcap("velodyne-32_1.pcap");
+	std::string pcap("bs4d1lane.pcap");
 	std::string clbr("config.xml");
 
 	pcl::console::parse_argument(argc, argv, "-ipaddress", ipaddress);
@@ -303,58 +303,22 @@ int main(int argc, char *argv[])
 			// Handler for color selection of  Point Cloud
 			handler->setInputCloud(cloud);
 
-			// Make room for a plane equation (ax+by+cz+d=0)
-			seg.setOptimizeCoefficients(true);				// Optional
-			seg.setMethodType(pcl::SAC_RANSAC);
-			seg.setModelType(pcl::SACMODEL_PLANE);
-			seg.setDistanceThreshold(0.45f);
-			seg.setInputCloud(cloud);
-			seg.segment(*inliers_plane, *plane);
+			pcl::PassThrough<PointType> pass_z;
+			pass_z.setInputCloud(cloud);
+			pass_z.setFilterFieldName("z");
+			pass_z.setFilterLimits(-2.0f, 10.0f);
+			pass_z.setFilterLimitsNegative(false);
+			pass_z.filter(*cloud_outliers);
 
-			if (inliers_plane->indices.size() == 0) {
-				PCL_ERROR("Could not estimate a planar model for the given dataset.\n");
-				return (-1);
-			}
-			if (debug)
-			{
-				std::cerr << "PointCloud after filtering: " << cloud_filtered->width * cloud_filtered->height
-					<< " data points (" << pcl::getFieldsList(*cloud_filtered) << ").\n\n";
-			}
-
-			// Extract Inliers
-
-			extract.setInputCloud(cloud);
-			extract.setIndices(inliers_plane);
-			extract.setNegative(false);			// Extract the inliers
-			extract.filter(*cloud_inliers);		// cloud_inliers contains the plane
-
-
-												// Create the filtering object
-			
-
-			// Extract Outliers
-			extract.setNegative(true);
-			extract.filter(*cloud_outliers);		// cloud_outliers contains everything but the plane
-			if (debug)
-			{
-				std::cerr << "Outliners Initial : " << cloud_outliers->width * cloud_outliers->height
-					<< " data points (" << pcl::getFieldsList(*cloud_outliers) << ").\n\n";
-			}
-
+		
 			pcl::PassThrough<PointType> pass;
 			pass.setInputCloud(cloud_outliers);
 			pass.setFilterFieldName("intensity");
-			pass.setFilterLimits(3.0f, 300.0f);
-			pass.setFilterLimitsNegative(true);
-			pass.filter(*cloud_filtered);
-
-			// Removing Outliers
-			// Create the filtering object
-			pcl::StatisticalOutlierRemoval<PointType> sor;
-			sor.setInputCloud(cloud_filtered);
-			sor.setMeanK(50);
-			sor.setStddevMulThresh(1.0);
-			sor.filter(*cloud_outliers);
+			pass.setFilterLimits(150.0f, 300.0f);
+			pass.setFilterLimitsNegative(false);
+			pass.filter(*cloud_outliers);
+			
+		
 
 			if (debug)
 			{
@@ -366,8 +330,8 @@ int main(int argc, char *argv[])
 				viewer->addPointCloud(cloud_outliers, *handler, "cloud outs");
 
 			}
-
-			if (1)
+			
+			if (0)
 			{
 
 				pcl::visualization::PointCloudColorHandlerCustom<PointType> rgb2(cloud_inliers, 255.0, 0.0, 0.0); //This will display the point cloud in green (R,G,B)
@@ -393,8 +357,8 @@ int main(int argc, char *argv[])
 			{
 				// Eucledian
 				pcl::EuclideanClusterExtraction<PointType> ec;
-				ec.setClusterTolerance(0.45); // 2cm
-				ec.setMinClusterSize(100);
+				ec.setClusterTolerance(0.1); // 2cm
+				ec.setMinClusterSize(10);
 				ec.setMaxClusterSize(6000);
 				ec.setSearchMethod(search_tree);
 				ec.setInputCloud(cloud_outliers);
@@ -439,13 +403,7 @@ int main(int argc, char *argv[])
 					/*+++++++++++++++
 					Outliner removal in each cluster
 					+++++++++++++++++*/
-					pcl::RadiusOutlierRemoval<PointType> outrem;
-					// build the filter
-					outrem.setInputCloud(cloud_cluster_vector[i]);
-					outrem.setRadiusSearch(0.8);
-					outrem.setMinNeighborsInRadius(2);
-					// apply filter
-					outrem.filter(*cloud_cluster_vector[i]);
+					
 
 					//viewer->removeShape(ss.str());
 					std::stringstream ss1, cluster,ss2;
