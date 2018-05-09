@@ -136,8 +136,8 @@ int main(int argc, char *argv[])
 	// Default values
 	std::string ipaddress("192.168.1.112");
 	std::string port("2368");
-	std::string pcap("80kmlane2.pcap");
-	std::string clbr("config.xml");
+	std::string pcap;
+	std::string clbr;
 
 	pcl::console::parse_argument(argc, argv, "-ipaddress", ipaddress);
 	pcl::console::parse_argument(argc, argv, "-port", port);
@@ -164,7 +164,7 @@ int main(int argc, char *argv[])
 	bool downsample = false,
 		eucledian = true,
 		region_growing = false,
-		bounding = true,
+		bounding = false,
 		bounding_alt = false,
 		debug = false;
 
@@ -302,21 +302,23 @@ int main(int argc, char *argv[])
 
 			// Handler for color selection of  Point Cloud
 			handler->setInputCloud(cloud);
-
+			/*
 			pcl::PassThrough<PointType> pass_z;
 			pass_z.setInputCloud(cloud);
 			pass_z.setFilterFieldName("z");
 			pass_z.setFilterLimits(-2.0f, 10.0f);
 			pass_z.setFilterLimitsNegative(false);
 			pass_z.filter(*cloud_outliers);
-
+			*/
 		
 			pcl::PassThrough<PointType> pass;
-			pass.setInputCloud(cloud_outliers);
+			pass.setInputCloud(cloud);
 			pass.setFilterFieldName("intensity");
-			pass.setFilterLimits(150.0f, 300.0f);
+			pass.setFilterLimits(120.0f, 300.0f);
 			pass.setFilterLimitsNegative(false);
 			pass.filter(*cloud_outliers);
+			pass.setFilterLimitsNegative(true);
+			pass.filter(*cloud_inliers);
 			
 			if (debug)
 			{
@@ -329,7 +331,7 @@ int main(int argc, char *argv[])
 
 			}
 			
-			if (0)
+			if (1)
 			{
 				pcl::visualization::PointCloudColorHandlerCustom<PointType> rgb2(cloud_inliers, 255.0, 0.0, 0.0); //This will display the point cloud in green (R,G,B)
 				if ((!viewer->updatePointCloud(cloud_inliers, rgb2, "cloud ins")))
@@ -354,8 +356,8 @@ int main(int argc, char *argv[])
 			{
 				// Eucledian
 				pcl::EuclideanClusterExtraction<PointType> ec;
-				ec.setClusterTolerance(0.8); // 2cm
-				ec.setMinClusterSize(3);
+				ec.setClusterTolerance(1); // 2cm
+				ec.setMinClusterSize(1);
 				ec.setMaxClusterSize(6000);
 				ec.setSearchMethod(search_tree);
 				ec.setInputCloud(cloud_outliers);
@@ -438,8 +440,8 @@ int main(int argc, char *argv[])
 					meas_snd[i].utc = time_cluster;
 					
 					send_measurement = true;
-					viewer->addCube(min_point_AABB.x, max_point_AABB.x, min_point_AABB.y, max_point_AABB.y, min_point_AABB.z, max_point_AABB.z, 1.0, 1.0, 0.0, ss1.str());
-					viewer->setRepresentationToWireframeForAllActors();
+					//viewer->addCube(min_point_AABB.x, max_point_AABB.x, min_point_AABB.y, max_point_AABB.y, min_point_AABB.z, max_point_AABB.z, 1.0, 1.0, 0.0, ss1.str());
+					//viewer->setRepresentationToWireframeForAllActors();
 
 				}
 			}
