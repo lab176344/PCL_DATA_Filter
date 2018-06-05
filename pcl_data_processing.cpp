@@ -101,9 +101,9 @@ double angle_to_line(pcl::PointXYZ line_start, pcl::PointXYZ line_end, pcl::Poin
 	return result;
 }
 
-uint32_t calculate_utc(uint32_t time,uint32_t tim_gap, float azimuth)
+uint32_t calculate_utc(uint32_t time, uint32_t tim_gap, float azimuth)
 {
-	uint32_t time_calcualte=0;
+	uint32_t time_calcualte = 0;
 	uint32_t time_degree = 0;
 	time_degree = tim_gap * (azimuth / 360);
 	time_calcualte = time - time_degree;
@@ -136,8 +136,8 @@ int main(int argc, char *argv[])
 	// Default values
 	std::string ipaddress("192.168.1.112");
 	std::string port("2368");
-	std::string pcap;
-	std::string clbr;
+	std::string pcap("bs4d1lane.pcap");
+	std::string clbr("HDL-32.xml");
 
 	pcl::console::parse_argument(argc, argv, "-ipaddress", ipaddress);
 	pcl::console::parse_argument(argc, argv, "-port", port);
@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
 	//-----------------------------------------------------------------------------------------------------------------------------------------------
 
 	/* VARIABLE DECLARATIONS */
-	
+
 	std::vector<measurement> meas_snd(10);
 
 
@@ -164,7 +164,7 @@ int main(int argc, char *argv[])
 	bool downsample = false,
 		eucledian = true,
 		region_growing = false,
-		bounding = false,
+		bounding = true,
 		bounding_alt = false,
 		debug = false;
 
@@ -249,7 +249,7 @@ int main(int argc, char *argv[])
 	}
 	// Register Callback Function
 	boost::signals2::connection connection = grabber->registerCallback(function);
-	
+
 	// Start Grabber
 	grabber->start();
 
@@ -265,8 +265,8 @@ int main(int argc, char *argv[])
 		viewer->spinOnce(); // Update Viewer
 		tStart = clock();
 		boost::mutex::scoped_try_lock lock(mutex);
-		unsigned int lastangle=grabber->last_azimuth_;
-		if (lock.owns_lock() && cloud) 
+		unsigned int lastangle = grabber->last_azimuth_;
+		if (lock.owns_lock() && cloud)
 		{
 			if (debug)
 			{
@@ -279,17 +279,18 @@ int main(int argc, char *argv[])
 			time_frame = cloud->header.stamp;
 			n = static_cast<uint32_t>(time_frame);
 			u = time_frame >> 32;
-			cout << (n - last_time) << endl;
+			cout << u << endl;
+		
 			time_gap = n - last_time;
 			last_time = n;
-			std::string frameid=cloud->header.frame_id;
-			cout << frameid << endl;
+			std::string frameid = cloud->header.frame_id;
+			
 			//---------------------------------------------------------------------------------------------------------------------------------------
-		
+
 
 			/* FILTERING THE Z AXIS AND DOWNSAMPLING */
 
-		
+
 			if (downsample)
 			{
 				// Downsample the cloud and Create the filtering object
@@ -302,24 +303,31 @@ int main(int argc, char *argv[])
 
 			// Handler for color selection of  Point Cloud
 			handler->setInputCloud(cloud);
-			/*
+
 			pcl::PassThrough<PointType> pass_z;
 			pass_z.setInputCloud(cloud);
 			pass_z.setFilterFieldName("z");
-			pass_z.setFilterLimits(-2.0f, 10.0f);
+			pass_z.setFilterLimits(0.1f, 10.0f);
 			pass_z.setFilterLimitsNegative(false);
 			pass_z.filter(*cloud_outliers);
-			*/
-		
-			pcl::PassThrough<PointType> pass;
-			pass.setInputCloud(cloud);
-			pass.setFilterFieldName("intensity");
-			pass.setFilterLimits(120.0f, 300.0f);
-			pass.setFilterLimitsNegative(false);
-			pass.filter(*cloud_outliers);
-			pass.setFilterLimitsNegative(true);
-			pass.filter(*cloud_inliers);
-			
+
+			pcl::PassThrough<PointType> pass_x;
+			pass_x.setInputCloud(cloud_outliers);
+			pass_x.setFilterFieldName("y");
+			pass_x.setFilterLimits(-15.0f, 15.0f);
+			pass_x.setFilterLimitsNegative(false);
+			pass_x.filter(*cloud_outliers);
+
+			/*
+		pcl::PassThrough<PointType> pass;
+		pass.setInputCloud(cloud);
+		pass.setFilterFieldName("intensity");
+		pass.setFilterLimits(120.0f, 300.0f);
+		pass.setFilterLimitsNegative(false);
+		pass.filter(*cloud_outliers);
+		pass.setFilterLimitsNegative(true);
+		pass.filter(*cloud_inliers);
+		*/
 			if (debug)
 			{
 				std::cerr << "Stat Outliners Final: " << cloud_outliers->width * cloud_outliers->height
@@ -330,7 +338,7 @@ int main(int argc, char *argv[])
 				viewer->addPointCloud(cloud_outliers, *handler, "cloud outs");
 
 			}
-			
+
 			if (1)
 			{
 				pcl::visualization::PointCloudColorHandlerCustom<PointType> rgb2(cloud_inliers, 255.0, 0.0, 0.0); //This will display the point cloud in green (R,G,B)
@@ -356,9 +364,9 @@ int main(int argc, char *argv[])
 			{
 				// Eucledian
 				pcl::EuclideanClusterExtraction<PointType> ec;
-				ec.setClusterTolerance(1); // 2cm
-				ec.setMinClusterSize(1);
-				ec.setMaxClusterSize(6000);
+				ec.setClusterTolerance(0.35); // 2cm
+				ec.setMinClusterSize(5);
+				ec.setMaxClusterSize(100);
 				ec.setSearchMethod(search_tree);
 				ec.setInputCloud(cloud_outliers);
 				ec.extract(cluster_indices);
@@ -400,9 +408,9 @@ int main(int argc, char *argv[])
 					/*+++++++++++++++
 					Outliner removal in each cluster
 					+++++++++++++++++*/
-				
-					std::stringstream ss1, cluster,ss2;
-				
+
+					std::stringstream ss1, cluster, ss2;
+
 					/**+++++++++++++++
 					Bounidng box generation
 					++++++++++++++++++*/
@@ -427,7 +435,7 @@ int main(int argc, char *argv[])
 					{
 						continue;
 					}
-					cluster_angle = std::atan2(cluster_y,cluster_x);
+					cluster_angle = std::atan2(cluster_y, cluster_x);
 					meas_snd[i].x = cluster_x;
 					meas_snd[i].y = cluster_y;
 					if (cluster_angle < 0)
@@ -435,19 +443,22 @@ int main(int argc, char *argv[])
 						cluster_angle = 360 - cluster_angle;
 					}
 					meas_snd[i].azimuth = cluster_angle;
-					time_cluster = calculate_utc(n,time_gap, meas_snd[i].azimuth);
+					time_cluster = calculate_utc(n, time_gap, meas_snd[i].azimuth);
 
 					meas_snd[i].utc = time_cluster;
-					
+
 					send_measurement = true;
-					//viewer->addCube(min_point_AABB.x, max_point_AABB.x, min_point_AABB.y, max_point_AABB.y, min_point_AABB.z, max_point_AABB.z, 1.0, 1.0, 0.0, ss1.str());
-					//viewer->setRepresentationToWireframeForAllActors();
+					if ((max_point_AABB.z - min_point_AABB.z) > 0.5)
+					{
+						viewer->addCube(min_point_AABB.x, max_point_AABB.x, min_point_AABB.y, max_point_AABB.y, min_point_AABB.z, max_point_AABB.z, 1.0, 1.0, 0.0, ss1.str());
+						viewer->setRepresentationToWireframeForAllActors();
+					}
 
 				}
 			}
 		}
-		if(send_measurement)
-		{ 
+		if (send_measurement)
+		{
 
 			matlabsend.push_back(meas_snd);
 
