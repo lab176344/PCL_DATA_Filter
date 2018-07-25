@@ -53,6 +53,8 @@ struct measurement
 	float z;
 	float azimuth;
 	uint32_t utc;
+	pcl::PointXYZI max, min;
+
 };
 
 
@@ -60,74 +62,127 @@ struct measurement
 // Namespaces for PCL and OpenCV
 
 using namespace std;
-bool send_measurement = false;
 // Point Type (pcl::PointXYZ, pcl::PointXYZI, pcl::PointXYZRGBA)
 typedef pcl::PointXYZI PointType;
 // For Ground plane estimation
 typedef pcl::PointCloud<PointType> PointCloudT;
 // For clustering
 typedef pcl::PointXYZINormal PointTypeFull;
-std::vector<std::vector<measurement>> matlabsend;
-std::vector<measurement> meas_snd(10);
-// For Filtering
+
 pcl::PointCloud<PointType>::Ptr cloud_filtered(new pcl::PointCloud<PointType>);
 
-// For ground plane estimation 
-PointCloudT::Ptr	cloud_inliers(new PointCloudT), cloud_outliers(new PointCloudT);
+//---------------------------------------------------------------------------------------------------------------------------------------------------
+// For ground plane estimation
+PointCloudT::Ptr	cloud_inliers(new PointCloudT), cloud_outliers(new PointCloudT), cloud_seg(new PointCloudT);
+
+// Segment the ground
+pcl::ModelCoefficients::Ptr plane(new pcl::ModelCoefficients);
+pcl::PointIndices::Ptr 		inliers_plane(new pcl::PointIndices);
+PointCloudT::Ptr 			cloud_plane(new PointCloudT);
+
+
 //---------------------------------------------------------------------------------------------------------------------------------------------------
 
-/* GLOBAL FUNCTION DECLARATIONS */
+/* GLOBAL VARIABLE DECLARATIONS */
 
+std::vector<measurement> meas_snd(30);
+std::vector<std::vector<measurement>> matlabsend;
+bool first_frame = false; uint64_t time_frame; float current_time = 0; uint32_t last_time = 0, ls_t = 0; uint32_t n, u;
+bool send_measurement = false;
+/* GLOBAL FUNCTION DECLARATIONS */
+std::ofstream wrte("test.csv");
+
+/* GLOBAL FUNCTION DECLARATIONS */
+void vector_clear()
+{
+
+	for (int i = 0; i < 30; i++)
+	{
+		meas_snd[i].x = 0; meas_snd[i].y = 0; meas_snd[i].z = 0; meas_snd[i].utc = 0; meas_snd[i].azimuth = 0;
+	}
+}
 
 uint32_t calculate_utc(uint32_t time, uint32_t tim_gap, float azimuth)
 {
 	uint32_t time_calcualte = 0;
 	uint32_t time_degree = 0;
-	time_degree = tim_gap * (azimuth / 360);
+	time_degree = tim_gap * ((6.28319 - azimuth) / 6.28319);
 	time_calcualte = time - time_degree;
 
 
 	return time_calcualte;
 
 }
-void vector_clear()
-{
-	for (int i = 0; i < 10; i++)
-	{
-		meas_snd[i].x = 0; meas_snd[i].y = 0; meas_snd[i].z = 0; meas_snd[i].utc = 0; meas_snd[i].azimuth = 0;
-	}
-}
-/**
-+-> Functio to remove the points in z above the car
 
-void passthru()
-{
-
-	// Create the filtering object
-	pcl::PassThrough<PointType> pass;
-	pass.setInputCloud(ptr);
-	pass.setFilterFieldName("z");
-	pass.setFilterLimits(-2.0f, 15.0);
-	pass.setFilterLimitsNegative(true);
-	pass.filter(*cloud_outliers);
-}
-*/
 void pass_inte(pcl::PointCloud<PointType>::ConstPtr ptr)
 {
 	pcl::PassThrough<PointType> pass;
 	pass.setInputCloud(ptr);
-	pass.setFilterFieldName("intensity");
-	pass.setFilterLimits(150.0f, 300.0f);
-	pass.setFilterLimitsNegative(false);
-	pass.filter(*cloud_outliers);
+	pass.setFilterFieldName("z");
+	pass.setFilterLimits(2.0f, 25.0f);
 	pass.setFilterLimitsNegative(true);
-	pass.filter(*cloud_inliers);
+	pass.filter(*cloud_seg);
 }
+/**
+* +-> Function for ground plane estimation
+*/
+void segmentcloud()
+{
+	// Segment the ground
+	pcl::ModelCoefficients::Ptr plane(new pcl::ModelCoefficients);
+	pcl::PointIndices::Ptr 		inliers_plane(new pcl::PointIndices);
+	PointCloudT::Ptr 			cloud_plane(new PointCloudT);
+	pcl::ExtractIndices<PointType> extract;
+
+	plane->values.resize(4);                            // 4 points to form a plane
+														// Make room for a plane equation (ax+by+cz+d=0)
+	pcl::SACSegmentation<PointType> seg;				// Create the segmentation object
+	seg.setOptimizeCoefficients(true);				// Optional
+	seg.setMethodType(pcl::SAC_RANSAC);
+	seg.setModelType(pcl::SACMODEL_PLANE);
+	seg.setDistanceThreshold(0.4f);
+	seg.setInputCloud(cloud_seg);
+	seg.segment(*inliers_plane, *plane);
+
+	if (inliers_plane->indices.size() == 0) {
+		PCL_ERROR("Could not estimate a planar model for the given dataset.\n");
+	}
+
+	// Extract Inliers
+
+	extract.setInputCloud(cloud_seg);
+	extract.setIndices(inliers_plane);
+	extract.setNegative(false);			// Extract the inliers
+	extract.filter(*cloud_inliers);		// cloud_inliers contains the plane
+
+										// Extract Outliers
+	extract.setNegative(true);
+	extract.filter(*cloud_outliers);		// cloud_outliers contains everything but the plane
+
+
+}
+
+
+void write()
+{
+	for (int i = 0; i < 30; i++)
+	{
+		if (meas_snd[i].x != 0)
+		{
+			wrte << meas_snd[i].x << ";" << meas_snd[i].y << ";" << meas_snd[i].utc << ";" << endl;
+		}
+	}
+}
+
+
 void cluster(uint32_t n)
 {
+	cout << "UTC" << n << endl;
 	/* CLUSTERING */
-
-	// Search tree 
+	uint32_t time_s = 0;
+	time_s = n - last_time;
+	last_time = n;
+	// Search tree
 	pcl::search::KdTree<PointType>::Ptr search_tree(new pcl::search::KdTree<PointType>);
 	search_tree->setInputCloud(cloud_outliers);			// Kd Tree Data Structure
 	std::vector<pcl::PointIndices> cluster_indices;		// Extraxt indices here
@@ -135,14 +190,14 @@ void cluster(uint32_t n)
 	std::vector<pcl::PointCloud<PointType>::Ptr> cloud_cluster_vector;
 	// Cluster algorithm
 
-	// Eucledian 
+	// Eucledian
 	if (1)
 	{
 		// Eucledian
 		pcl::EuclideanClusterExtraction<PointType> ec;
-		ec.setClusterTolerance(0.8); // 2cm
-		ec.setMinClusterSize(3);
-		ec.setMaxClusterSize(6000);
+		ec.setClusterTolerance(2); // 2cm
+		ec.setMinClusterSize(1);
+		ec.setMaxClusterSize(100);
 		ec.setSearchMethod(search_tree);
 		ec.setInputCloud(cloud_outliers);
 		ec.extract(cluster_indices);
@@ -161,6 +216,10 @@ void cluster(uint32_t n)
 
 		for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
 		{
+			if (j > 29)
+			{
+				break;
+			}
 
 			pcl::PointCloud<PointType>::Ptr cloud_cluster(new pcl::PointCloud<PointType>);
 			for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
@@ -178,14 +237,14 @@ void cluster(uint32_t n)
 		{
 
 			/*+++++++++++++++
-			Outliner removal in each cluster
-			+++++++++++++++++*/
+			* Outliner removal in each cluster
+			* +++++++++++++++++*/
 
 			std::stringstream ss1, cluster, ss2;
 
 			/**+++++++++++++++
-			Bounidng box generation
-			++++++++++++++++++*/
+			* Bounidng box generation
+			* ++++++++++++++++++*/
 
 			pcl::MomentOfInertiaEstimation <PointType> feature_extractor;
 			feature_extractor.setInputCloud(cloud_cluster_vector[i]);
@@ -207,33 +266,35 @@ void cluster(uint32_t n)
 			{
 				continue;
 			}
-			cluster_angle = std::atan2(cluster_y, cluster_x);
-			meas_snd[i].x = cluster_x * cos(-3.14159) + cluster_y * sin(-3.14159);
-			meas_snd[i].y = cluster_y * cos(-3.14159) - cluster_x * sin(-3.14159);
-			if (cluster_angle < 0)
+			float length = std::sqrt((max_point_AABB.x - min_point_AABB.x)*(max_point_AABB.x - min_point_AABB.x));
+			float width = std::sqrt((max_point_AABB.y - min_point_AABB.y)*(max_point_AABB.y - min_point_AABB.y));
+			if (length < 0.9 && width < 0.9)
 			{
-				cluster_angle = 360 - cluster_angle;
-			}
-			meas_snd[i].azimuth = cluster_angle;
-			//time_cluster = calculate_utc(n, time_gap, meas_snd[i].azimuth);
 
-			meas_snd[i].utc = n;
-			if(meas_snd[i].utc==0)
-			{ 
-				cout << meas_snd[i].utc << endl;
-			}
+				meas_snd[i].x = cluster_x * cos(-3.14159) + cluster_y * sin(-3.14159);
+				meas_snd[i].y = cluster_y * cos(-3.14159) - cluster_x * sin(-3.14159);
+				meas_snd[i].max = max_point_AABB;
+				meas_snd[i].min = min_point_AABB;
+				cluster_angle = std::atan2(cluster_x, cluster_y);
+				if (cluster_angle < 0.0)
+				{
+					cluster_angle += 6.28319;
+				}
+				meas_snd[i].azimuth = cluster_angle;
+				uint32_t ut = calculate_utc(n, time_s, cluster_angle);
+				meas_snd[i].utc = ut;
 
+				//time_cluster = calculate_utc(n, time_gap, meas_snd[i].azimuth);
+				send_measurement = true;
+			}
 		}
 	}
-
 }
 void vector_send(bool send)
 {
 	if (send)
 		matlabsend.push_back(meas_snd);
 }
-
-
 //---------------------------------------------------------------------------------------------------------------------------------------------------
 
 /* MAIN FUNCTION */
@@ -256,9 +317,9 @@ int main(int argc, char *argv[])
 	// Default values
 	std::string ipaddress("192.168.1.112");
 	std::string port("2368");
-	std::string pcap("conv1.pcap");
+	std::string pcap("All3Static2.pcap");
 	std::string clbr("HDL-32.xml");
-
+	int shae = 0;
 	pcl::console::parse_argument(argc, argv, "-ipaddress", ipaddress);
 	pcl::console::parse_argument(argc, argv, "-port", port);
 	pcl::console::parse_argument(argc, argv, "-pcap", pcap);
@@ -342,8 +403,10 @@ int main(int argc, char *argv[])
 		vector_clear();
 		
 		pass_inte(ptr);
+		segmentcloud();
 		cluster(n_t);
 		vector_send(send_measurement);
+		write();
 		// Point Cloud Processing
 		cloud = ptr;
 	};
@@ -365,10 +428,11 @@ int main(int argc, char *argv[])
 
 	// Start Grabber
 	grabber->start();
-
+	std::stringstream s;
 	//-----------------------------------------------------------------------------------------------------------------------------------------------
 	while (!viewer->wasStopped())
 	{
+		
 		
 		viewer->spinOnce(); // Update Viewer
 		boost::mutex::scoped_try_lock lock(mutex);
@@ -381,8 +445,18 @@ int main(int argc, char *argv[])
 			
 			//---------------------------------------------------------------------------------------------------------------------------------------
 
-
-			
+			for (int i = 0; i < 30; i++)
+			{
+				if (meas_snd[i].x != 0)
+				{
+					viewer->addCube(meas_snd[i].min.x, meas_snd[i].max.x, meas_snd[i].min.y, meas_snd[i].max.y, meas_snd[i].min.z, meas_snd[i].max.z, 1.0, 1.0, 1.0, s.str());
+				
+				s << "l" << shae;
+				shae = shae + 1;
+				cout << meas_snd[i].utc << endl;
+				}
+			}
+			viewer->setRepresentationToWireframeForAllActors();
 			if ((!viewer->updatePointCloud(cloud_outliers, *handler, "cloud outs")))
 			{
 				viewer->addPointCloud(cloud_outliers, *handler, "cloud outs");
